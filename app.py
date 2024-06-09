@@ -1,47 +1,62 @@
-import streamlit as st
+from flask import Flask, request, render_template, redirect, url_for
 from PIL import Image
 import numpy as np
 import joblib
+import os
+
+app = Flask(__name__)
 
 # Load the pre-trained model
 model = joblib.load('model.pkl')  # Update with your actual model file path
 
-# Streamlit app title
-st.title("Handwritten Letter Recognition")
+# Allowed extensions for file upload
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
-# File uploader for image input
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-if uploaded_file is not None:
-    # Load the image
-    image = Image.open(uploaded_file)
-
-    # Display the uploaded image
-    st.image(image, caption='Uploaded Image', use_column_width=True)
-    st.write("")
-    st.write("Processing...")
-
+def process_image(image):
     # Convert to grayscale
     image = image.convert('L')
-
+    
     # Resize the image to 28x28
     image = image.resize((28, 28))
 
     # Convert to NumPy array
     image_array = np.array(image)
 
-    # Normalize the array (Optional: Depending on your model requirements, e.g., scaling to [0, 1])
-    image_array = image_array / 255.0  # If normalization was part of training
+    # Normalize the array (Optional: Depending on your model requirements)
+    image_array = image_array / 255.0  # Normalize to [0, 1]
 
     # Reshape the array to match the model's expected input shape
     image_array = image_array.reshape(1, 28, 28)  # Example for CNN, adjust if needed
+    
+    return image_array
 
-    # Predict the letter using the model
-    prediction = model.predict(image_array)
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    prediction = None
+    if request.method == 'POST':
+        # Check if the post request has the file part
+        if 'file' not in request.files:
+            return redirect(request.url)
+        
+        file = request.files['file']
+        
+        # If the user does not select a file, the browser may submit an empty part without filename
+        if file.filename == '':
+            return redirect(request.url)
+        
+        if file and allowed_file(file.filename):
+            # Open the image file
+            image = Image.open(file)
+            image_array = process_image(image)
+            predicted_letter = model.predict(image_array.reshape(1, 28, 28)).argmax(axis=1)[0]
+            
+            return render_template('index.html', prediction=predicted_letter)
+    
+    return render_template('index.html', prediction=prediction)
 
-    # Get the predicted letter (Assuming the model outputs the class index)
-    predicted_letter = chr(prediction.argmax())[0]
-
-    # Display the prediction
-    st.write(f"Predicted Letter: {predicted_letter}")
-
+if __name__ == '__main__':
+    app.run(debug=True)
